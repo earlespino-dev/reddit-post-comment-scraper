@@ -91,10 +91,10 @@ async function scrapeComments(postUrl) {
   const csvWriter = createCsvWriter({
     path: `reddit_comments_${postId}.csv`,
     header: [
+      { id: "body", title: "Body" },
       { id: "author", title: "Author" },
       { id: "createdDate", title: "Created Date" },
       { id: "permalink", title: "Permalink" },
-      { id: "body", title: "Body" },
     ],
   });
 
