@@ -9,8 +9,13 @@ const username = process.env.REDDIT_USERNAME;
 const password = process.env.REDDIT_PASSWORD;
 
 const keywords_to_look_for = ["sprite", "126720VTNR"];
-const postUrl =
-  "https://www.reddit.com/r/rolex/comments/18ykjqt/ad_wait_time_megathread_if_you_bought_a_new_rolex/";
+const postUrl = "https://www.reddit.com/r/rolex/comments/18ykjqt/ad_wait_time_megathread_if_you_bought_a_new_rolex/";
+
+const postUrls = [
+  "https://www.reddit.com/r/rolex/comments/18ykjqt/ad_wait_time_megathread_if_you_bought_a_new_rolex/",
+  "https://www.reddit.com/r/rolex/comments/100jo7p/ad_wait_time_megathread_if_you_bought_a_new_rolex/",
+  "https://www.reddit.com/r/rolex/comments/rtce2y/ad_wait_time_megathread_if_you_bought_a_new_rolex/"
+]
 
 async function getAccessToken() {
   const response = await axios.post(
@@ -132,4 +137,11 @@ async function scrapeComments(postUrl) {
   console.log(`Found and wrote ${spriteCommentCount} sprite-related comments to CSV`);
 }
 
-scrapeComments(postUrl);
+async function scrapePostUrls() {
+  for (let url of postUrls) {
+    await scrapeComments(url);
+  }
+}
+
+// scrapeComments(postUrl);
+scrapePostUrls();
