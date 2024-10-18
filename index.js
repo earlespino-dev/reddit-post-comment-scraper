@@ -8,6 +8,10 @@ const clientSecret = process.env.REDDIT_CLIENT_SECRET;
 const username = process.env.REDDIT_USERNAME;
 const password = process.env.REDDIT_PASSWORD;
 
+const keywords_to_look_for = ["sprite", "126720VTNR"];
+const postUrl =
+  "https://www.reddit.com/r/rolex/comments/18ykjqt/ad_wait_time_megathread_if_you_bought_a_new_rolex/";
+
 async function getAccessToken() {
   const response = await axios.post(
     "https://www.reddit.com/api/v1/access_token",
@@ -20,20 +24,67 @@ async function getAccessToken() {
   return response.data.access_token;
 }
 
-async function fetchComments(postId, accessToken, after) {
+async function fetchComments(postId, accessToken) {
   const response = await axios.get(
     `https://oauth.reddit.com/comments/${postId}`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        ...(after !== undefined && { after }),
+      },
+      params: {
+        limit: 500,  // Fetch maximum allowed comments per request
+        depth: 1,    // Only fetch top-level comments
       },
     },
   );
-  return response.data[1].data.children;
+  return response.data[1].data;
 }
 
-const sprite_keywords = ["sprite", "126720VTNR"];
+async function fetchMoreComments(postId, accessToken, children) {
+  const response = await axios.post(
+    "https://oauth.reddit.com/api/morechildren",
+    new URLSearchParams({
+      api_type: 'json',
+      link_id: `t3_${postId}`,
+      children: children.join(','),
+      limit_children: false,
+    }),
+    {
+      headers: { 
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    },
+  );
+  return response.data.json.data.things;
+}
+
+async function* commentGenerator(postId, accessToken) {
+  let moreComments = [];
+  
+  // Fetch initial set of comments
+  const initialData = await fetchComments(postId, accessToken);
+  for (const comment of initialData.children) {
+    if (comment.kind === 't1') {
+      yield comment.data;
+    } else if (comment.kind === 'more') {
+      moreComments = moreComments.concat(comment.data.children);
+    }
+  }
+
+  // Fetch additional comments
+  while (moreComments.length > 0) {
+    const batch = moreComments.splice(0, 100); // Reddit allows max 100 IDs per request
+    const additionalComments = await fetchMoreComments(postId, accessToken, batch);
+    for (const comment of additionalComments) {
+      if (comment.kind === 't1') {
+        yield comment.data;
+      } else if (comment.kind === 'more') {
+        moreComments = moreComments.concat(comment.data.children);
+      }
+    }
+  }
+}
 
 async function scrapeComments(postUrl) {
   const postId = postUrl.split("/comments/")[1].split("/")[0];
@@ -46,49 +97,39 @@ async function scrapeComments(postUrl) {
       { id: "body", title: "Body" },
     ],
   });
+
   try {
-    await fs.readFile(`reddit_comments_${postId}.csv`);
+    await fs.access(`reddit_comments_${postId}.csv`);
   } catch (e) {
-    await fs.writeFile(
-      `reddit_comments_${postId}.csv`,
-      "Author,Created Date,Permalink,Body\n",
-    );
+    await csvWriter.writeRecords([]);  // Create empty CSV if it doesn't exist
   }
 
   const accessToken = await getAccessToken();
-  console.log("access token works");
-  let after = undefined;
-  let count = undefined;
+  console.log("Access token acquired");
 
-  do {
-    const comments = await fetchComments(postId, accessToken);
-    const last = comments.at(-1);
-    // after = last.data.name;
-    // count = last.data.count;
+  const commentGen = commentGenerator(postId, accessToken);
+  let commentCount = 0;
+  let spriteCommentCount = 0;
 
-    const spriteCsvData = comments.filter(
-      (raw) =>
-        raw.data.body !== undefined &&
-        sprite_keywords.some((sprite) => raw.data.body.includes(sprite)),
-    );
-    if (spriteCsvData) {
-      const parsedCsvData = spriteCsvData.map((raw) => {
-        const body = raw.data.body.replace(/\n/g, " ");
-        const permalink = `https://reddit.com${raw.data.permalink}`;
-        const author = raw.data.author;
-        const createdDate = new Date(
-          raw.data.created_utc * 1000,
-        ).toLocaleDateString();
-
-        return { author, body, createdDate, permalink };
-      });
-      // console.log(parsedCsvData);
-      await csvWriter.writeRecords(parsedCsvData);
+  for await (const comment of commentGen) {
+    commentCount++;
+    if (keywords_to_look_for.some(keyword => comment.body.toLowerCase().includes(keyword.toLowerCase()))) {
+      spriteCommentCount++;
+      const parsedComment = {
+        author: comment.author,
+        createdDate: new Date(comment.created_utc * 1000).toLocaleDateString(),
+        permalink: `https://reddit.com${comment.permalink}`,
+        body: comment.body.replace(/\n/g, ' ')
+      };
+      await csvWriter.writeRecords([parsedComment]);
+      if (spriteCommentCount % 10 === 0) {
+        console.log(`Processed ${commentCount} comments, found ${spriteCommentCount} sprite comments`);
+      }
     }
-  } while (after !== undefined);
+  }
+
+  console.log(`Finished processing ${commentCount} comments`);
+  console.log(`Found and wrote ${spriteCommentCount} sprite-related comments to CSV`);
 }
 
-// Example usage
-const postUrl =
-  "https://www.reddit.com/r/rolex/comments/18ykjqt/ad_wait_time_megathread_if_you_bought_a_new_rolex/";
 scrapeComments(postUrl);
