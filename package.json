@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "jest --coverage --silent",
+    "format": "prettier -w index.js",
     "start": "node ./index"
   },
   "author": "Earl Espino",
@@ -15,6 +15,6 @@
     "dotenv": "^16.4.5"
   },
   "devDependencies": {
-    "jest": "^29.7.0"
+    "prettier": "^3.3.3"
   }
 }
